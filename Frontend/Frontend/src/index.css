@@ -1,0 +1,246 @@
+@import "tailwindcss";
+@import "./theme/tokens.css";
+
+/* ------------------------------------------------------------------ */
+/* Base                                                                */
+/* ------------------------------------------------------------------ */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-text);
+  background-color: var(--canvas);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  letter-spacing: -0.01em;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+::selection {
+  background: var(--primary-soft);
+}
+
+/* Themed scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--hairline-strong);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--ink-tertiary);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+
+/* TipTap Editor Styles */
+
+.review-editor-content {
+  min-height: 500px;
+  padding: 28px 36px;
+  line-height: 1.75;
+  color: var(--ink);
+  font-size: 14px;
+  outline: none;
+}
+
+.review-editor-content:focus {
+  outline: none;
+}
+
+
+/* Headings */
+
+.review-editor-content h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.review-editor-content h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+  color: var(--ink);
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.review-editor-content h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-top: 1.25rem;
+  margin-bottom: 0.4rem;
+  color: var(--ink-muted);
+}
+
+
+/* Paragraphs */
+
+.review-editor-content p {
+  margin-bottom: 0.75rem;
+}
+
+
+/* Lists */
+
+.review-editor-content ul,
+.review-editor-content ol {
+  margin-bottom: 0.75rem;
+  padding-left: 1.5rem;
+}
+
+.review-editor-content ul {
+  list-style-type: disc;
+}
+
+.review-editor-content ol {
+  list-style-type: decimal;
+}
+
+.review-editor-content li {
+  margin-bottom: 0.25rem;
+}
+
+.review-editor-content li p {
+  margin-bottom: 0.15rem;
+}
+
+
+/* Horizontal Rule */
+
+.review-editor-content hr {
+  border: none;
+  border-top: 1px solid var(--hairline);
+  margin: 1.75rem 0;
+}
+
+
+/* Tables */
+
+.review-editor-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  table-layout: auto;
+}
+
+.review-editor-content table th,
+.review-editor-content table td {
+  border: 1px solid var(--hairline);
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 0.875rem;
+  vertical-align: top;
+  position: relative;
+}
+
+.review-editor-content table th {
+  background-color: var(--surface-2);
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.review-editor-content table td p,
+.review-editor-content table th p {
+  margin-bottom: 0;
+}
+
+.review-editor-content table td ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.review-editor-content table td ul li {
+  margin-bottom: 0.1rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+
+/* Selected table cell highlight */
+
+.review-editor-content .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--primary-soft);
+  pointer-events: none;
+}
+
+
+/* Table resize handle */
+
+.review-editor-content .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background-color: var(--primary);
+  cursor: col-resize;
+}
+
+.review-editor-content .tableWrapper {
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+
+/* Blockquote */
+
+.review-editor-content blockquote {
+  border-left: 3px solid var(--primary);
+  padding-left: 1rem;
+  color: var(--ink-subtle);
+  margin: 1rem 0;
+  font-style: italic;
+}
+
+
+/* Links */
+
+.review-editor-content a {
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.review-editor-content a:hover {
+  color: var(--primary-hover);
+}

@@ -1,0 +1,565 @@
+# =============================================================================
+# agents.yaml — AI Agentic Workflow Configuration
+# Project: Project Estimation Tool (Backend)
+# Stack: .NET 10, ASP.NET Core, Microsoft.Extensions.AI, Microsoft.Agents.AI
+# =============================================================================
+
+project:
+  name: Project Estimation Tool
+  description: >
+    AI-powered project estimation platform with conversational requirement
+    gathering, structured analysis, and estimation capabilities.
+  repository_root: .
+  backend_root: Backend/Agents
+  frontend_root: Frontend/Frontend
+  target_framework: net10.0
+  language: C#
+  nullable: enable
+  implicit_usings: enable
+
+# -----------------------------------------------------------------------------
+# Shared context available to all agents
+# -----------------------------------------------------------------------------
+shared_context:
+  architecture:
+    pattern: ASP.NET Core Minimal Hosting + Controller-based API
+    di_container: Microsoft.Extensions.DependencyInjection (built-in)
+    ai_framework:
+      - Microsoft.Extensions.AI (IChatClient abstraction)
+      - Microsoft.Agents.AI (AIAgent, AgentSession, AgentResponse)
+    ai_provider: OpenRouter (OpenAI-compatible endpoint)
+    serialization: System.Text.Json
+    session_management: In-memory ConcurrentDictionary via AgentSessionManager singleton
+
+  directory_structure:
+    controllers: Backend/Agents/Controllers/
+    dtos: Backend/Agents/Dto/
+    models: Backend/Agents/Models/
+    services: Backend/Agents/Services/
+    config: Backend/Agents/appsettings.json
+    entry_point: Backend/Agents/Program.cs
+    project_file: Backend/Agents/Agents.csproj
+    tests: Backend/Agents.Tests/          # To be created
+
+  naming_conventions:
+    controllers: PascalCase, suffix with domain context (e.g., ProjectChatRequirements.cs)
+    dtos: PascalCase, suffix with Dto for requests (e.g., ProjectChatRequestDto)
+    response_models: PascalCase, suffix with Response (e.g., ProjectChatResponse)
+    services: PascalCase, descriptive name (e.g., AgentSessionManager)
+    namespaces: Domain-specific single-word or short phrase (e.g., ProjectRequirements, ProjectChat, SessionManager)
+    test_classes: "{ClassUnderTest}Tests"
+    test_methods: "{MethodName}_{Scenario}_{ExpectedResult}"
+
+  coding_standards:
+    nullable_reference_types: enabled
+    use_file_scoped_namespaces: false       # Project uses block-scoped namespaces
+    use_primary_constructors: false          # Project uses traditional constructor DI
+    string_default: string.Empty
+    list_default: "new()"
+    json_options: PropertyNameCaseInsensitive = true
+    error_responses: Anonymous objects with error/details fields
+    validation: Inline guard clauses in controller actions (string.IsNullOrWhiteSpace)
+
+  dependencies:
+    - Microsoft.Agents.AI @ 1.13.0
+    - Microsoft.AspNetCore.OpenApi @ 10.0.9
+    - Microsoft.Extensions.AI @ 10.7.0
+    - Microsoft.Extensions.AI.OpenAI @ 10.7.0
+
+# =============================================================================
+# AGENT DEFINITIONS
+# =============================================================================
+
+agents:
+
+  # ---------------------------------------------------------------------------
+  # 1. CONTROLLER DEVELOPMENT AGENT
+  # ---------------------------------------------------------------------------
+  - name: controller-developer
+    role: Backend Controller Architect
+    description: >
+      Generates boilerplate and business logic for ASP.NET Core API controllers
+      following the established patterns in the Project Estimation codebase.
+
+    responsibilities:
+      - Scaffold new controller classes inheriting from ControllerBase with [ApiController] attribute
+      - Implement constructor-based dependency injection for IChatClient and AgentSessionManager
+      - Create AI agent definitions using _chatClient.AsAIAgent() with domain-specific system prompts
+      - Implement session management flow (TryGetSession → CreateSessionAsync → AddSession)
+      - Parse and deserialize structured JSON responses from AI agents
+      - Apply proper error handling (JsonException for malformed AI output, generic Exception fallback)
+      - Register new services in Program.cs DI container when required
+      - Define [Route] and [Http*] attributes consistent with existing URL patterns
+
+    technical_scope:
+      primary_files:
+        - Backend/Agents/Controllers/*.cs
+        - Backend/Agents/Program.cs
+      reference_files:
+        - Backend/Agents/Controllers/ProjectChatRequirements.cs  # Primary pattern reference
+        - Backend/Agents/Services/SessionManager.cs
+      output_directory: Backend/Agents/Controllers/
+      required_usings:
+        - System.Text.Json
+        - Microsoft.Agents.AI
+        - Microsoft.AspNetCore.Mvc
+        - Microsoft.Extensions.AI
+        - SessionManager
+
+    patterns:
+      controller_template: |
+        [ApiController]
+        [Route("{route-prefix}")]
+        public class {ControllerName} : ControllerBase
+        {
+            private readonly IChatClient _chatClient;
+            private readonly AgentSessionManager _sessionManager;
+
+            public {ControllerName}(
+                IChatClient chatClient,
+                AgentSessionManager sessionManager)
+            {
+                _chatClient = chatClient;
+                _sessionManager = sessionManager;
+            }
+
+            [HttpPost("{action}")]
+            public async Task<IActionResult> {ActionName}(
+                [FromBody] {RequestDto} request)
+            {
+                // 1. Validate request
+                // 2. Configure AIAgent with domain-specific instructions
+                // 3. Manage session (get or create)
+                // 4. Execute agent and parse response
+                // 5. Return structured result with error handling
+            }
+        }
+
+      validation_pattern: |
+        if (string.IsNullOrWhiteSpace(request.field))
+        {
+            return BadRequest(new { error = "field is required" });
+        }
+
+      agent_execution_pattern: |
+        AIAgent agent = _chatClient.AsAIAgent(
+            name: "{Agent Name}",
+            instructions: """ ... """);
+        AgentSession? session;
+        if (!_sessionManager.TryGetSession(request.conversation_id, out session))
+        {
+            session = await agent.CreateSessionAsync();
+            _sessionManager.AddSession(request.conversation_id, session);
+        }
+        AgentResponse response = await agent.RunAsync(request.message, session: session);
+
+      json_parsing_pattern: |
+        var json = response.Text
+            .Replace("```json", "")
+            .Replace("```", "")
+            .Trim();
+        var result = JsonSerializer.Deserialize<TResponse>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+    rules:
+      - Always use ControllerBase, never Controller (no view support needed)
+      - Use [ApiController] for automatic model validation and binding
+      - Keep AI agent instructions as raw string literals (triple-quoted)
+      - Return Ok() for success, BadRequest() for validation, StatusCode(500) for unexpected errors
+      - Inject IChatClient and AgentSessionManager via constructor; add new services to Program.cs
+      - Use async Task<IActionResult> return types for all action methods
+      - Strip markdown code fences from AI responses before JSON deserialization
+      - Namespace controllers with domain-specific names (not generic "Controllers")
+
+  # ---------------------------------------------------------------------------
+  # 2. API IMPLEMENTATION AGENT
+  # ---------------------------------------------------------------------------
+  - name: api-implementer
+    role: RESTful API Engineer
+    description: >
+      Creates complete RESTful endpoint implementations including route definitions,
+      request/response DTOs, service layer integration, and proper HTTP semantics.
+
+    responsibilities:
+      - Design RESTful route hierarchies consistent with existing [Route("project")] patterns
+      - Create request DTO classes with proper property defaults (string.Empty, new())
+      - Create response DTO classes modeling structured AI agent outputs
+      - Implement proper HTTP method semantics (POST for conversational endpoints, GET for retrieval)
+      - Configure request/response content negotiation (JSON)
+      - Add OpenAPI metadata for endpoint documentation
+      - Implement input validation with meaningful error messages
+      - Design conversation-based API contracts with session/conversation_id support
+      - Register new endpoints and middleware in Program.cs
+
+    technical_scope:
+      primary_files:
+        - Backend/Agents/Dto/*.cs
+        - Backend/Agents/Controllers/*.cs
+        - Backend/Agents/Program.cs
+        - Backend/Agents/Agents.http
+      reference_files:
+        - Backend/Agents/Dto/ProjectChatRequest.cs       # Request DTO pattern
+        - Backend/Agents/Dto/ProjectChatResponse.cs      # Response DTO pattern (nested models)
+        - Backend/Agents/Controllers/ProjectChatRequirements.cs
+      output_directories:
+        - Backend/Agents/Dto/
+        - Backend/Agents/Models/
+        - Backend/Agents/Controllers/
+        - Backend/Agents/Services/
+
+    patterns:
+      request_dto_template: |
+        namespace {DomainNamespace}
+        {
+            public class {Name}RequestDto
+            {
+                public string conversation_id { get; set; } = string.Empty;
+                public string message { get; set; } = string.Empty;
+                // Additional domain-specific fields
+            }
+        }
+
+      response_dto_template: |
+        namespace {DomainNamespace}
+        {
+            public class {Name}Response
+            {
+                public bool IsMatched { get; set; }
+                public string Response { get; set; } = string.Empty;
+                public {DetailModel}? Details { get; set; }
+                public List<string> MissingRequirements { get; set; } = new();
+            }
+
+            public class {DetailModel}
+            {
+                // Structured fields for normalized data
+            }
+        }
+
+      http_test_file_template: |
+        @Agents_HostAddress = http://localhost:5118
+
+        ### {Endpoint Description}
+        POST {{Agents_HostAddress}}/{route}
+        Content-Type: application/json
+
+        {
+          "conversation_id": "test-001",
+          "message": "test message"
+        }
+
+    route_conventions:
+      base_pattern: "[Route(\"{domain}\")]"
+      action_pattern: "[HttpPost(\"{action}\")]"
+      examples:
+        - "[Route(\"project\")] + [HttpPost(\"chat\")]  →  POST /project/chat"
+        - "[Route(\"estimation\")] + [HttpPost(\"analyze\")]  →  POST /estimation/analyze"
+        - "[Route(\"project\")] + [HttpGet(\"status/{id}\")]  →  GET /project/status/{id}"
+
+    rules:
+      - Use snake_case for request DTO properties that face external clients (conversation_id)
+      - Use PascalCase for response DTO properties (C# convention, handled by case-insensitive deserialization)
+      - Each DTO namespace should be domain-specific, not a generic "Dtos" namespace
+      - Nullable reference types for optional nested objects (e.g., ProjectDetails?)
+      - Initialize List<string> properties with new() to avoid null reference issues
+      - Initialize string properties with string.Empty
+      - Keep request DTOs flat; keep response DTOs hierarchical when modeling complex AI output
+      - Update Agents.http with test requests for every new endpoint
+      - Conversational endpoints must always require conversation_id and message fields
+
+  # ---------------------------------------------------------------------------
+  # 3. AUTOMATED TESTING AGENT
+  # ---------------------------------------------------------------------------
+  - name: test-engineer
+    role: Quality Assurance & Test Automation Engineer
+    description: >
+      Writes comprehensive unit, integration, and end-to-end tests for the backend
+      API, covering controllers, services, AI agent interactions, and HTTP endpoints.
+
+    responsibilities:
+      - Scaffold the test project (Agents.Tests) if it does not exist
+      - Write unit tests for controller action methods with mocked IChatClient and AgentSessionManager
+      - Write unit tests for service classes (AgentSessionManager session lifecycle)
+      - Write integration tests for HTTP endpoints using WebApplicationFactory
+      - Mock AI agent responses to test JSON deserialization and error handling paths
+      - Test validation logic (missing conversation_id, empty message)
+      - Test session management (new session creation, existing session retrieval)
+      - Test error handling (malformed JSON from AI, unexpected exceptions)
+      - Verify HTTP status codes (200, 400, 500) and response shapes
+      - Generate test data builders for request/response DTOs
+
+    technical_scope:
+      primary_files:
+        - Backend/Agents.Tests/**/*.cs
+      reference_files:
+        - Backend/Agents/Controllers/ProjectChatRequirements.cs
+        - Backend/Agents/Services/SessionManager.cs
+        - Backend/Agents/Dto/*.cs
+        - Backend/Agents/Program.cs
+      output_directory: Backend/Agents.Tests/
+      test_framework: xUnit (recommended for .NET 10)
+      mocking_framework: Moq or NSubstitute
+      assertion_library: FluentAssertions (optional)
+      integration_test_host: Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory
+
+    setup_commands:
+      create_test_project: |
+        dotnet new xunit -n Agents.Tests -o Backend/Agents.Tests --framework net10.0
+        dotnet add Backend/Agents.Tests reference Backend/Agents/Agents.csproj
+        dotnet add Backend/Agents.Tests package Moq
+        dotnet add Backend/Agents.Tests package FluentAssertions
+        dotnet add Backend/Agents.Tests package Microsoft.AspNetCore.Mvc.Testing
+
+    patterns:
+      unit_test_template: |
+        namespace Agents.Tests.Controllers
+        {
+            public class ProjectChatRequirementsTests
+            {
+                private readonly Mock<IChatClient> _mockChatClient;
+                private readonly AgentSessionManager _sessionManager;
+                private readonly ProjectChat _controller;
+
+                public ProjectChatRequirementsTests()
+                {
+                    _mockChatClient = new Mock<IChatClient>();
+                    _sessionManager = new AgentSessionManager();
+                    _controller = new ProjectChat(
+                        _mockChatClient.Object,
+                        _sessionManager);
+                }
+
+                [Fact]
+                public async Task ProjectRequirements_EmptyConversationId_ReturnsBadRequest()
+                {
+                    var request = new ProjectChatRequestDto
+                    {
+                        conversation_id = "",
+                        message = "test"
+                    };
+                    var result = await _controller.ProjectRequirements(request);
+                    result.Should().BeOfType<BadRequestObjectResult>();
+                }
+            }
+        }
+
+      integration_test_template: |
+        namespace Agents.Tests.Integration
+        {
+            public class ProjectChatEndpointTests
+                : IClassFixture<WebApplicationFactory<Program>>
+            {
+                private readonly HttpClient _client;
+
+                public ProjectChatEndpointTests(
+                    WebApplicationFactory<Program> factory)
+                {
+                    _client = factory.WithWebHostBuilder(builder =>
+                    {
+                        builder.ConfigureServices(services =>
+                        {
+                            // Replace IChatClient with mock
+                        });
+                    }).CreateClient();
+                }
+
+                [Fact]
+                public async Task PostProjectChat_ValidRequest_ReturnsOk()
+                {
+                    var content = JsonContent.Create(new
+                    {
+                        conversation_id = "test-001",
+                        message = "I need a web app"
+                    });
+                    var response = await _client.PostAsync(
+                        "/project/chat", content);
+                    response.StatusCode.Should().Be(HttpStatusCode.OK);
+                }
+            }
+        }
+
+      service_test_template: |
+        namespace Agents.Tests.Services
+        {
+            public class AgentSessionManagerTests
+            {
+                [Fact]
+                public void TryGetSession_NoSession_ReturnsFalse()
+                {
+                    var manager = new AgentSessionManager();
+                    var result = manager.TryGetSession("unknown", out var session);
+                    result.Should().BeFalse();
+                    session.Should().BeNull();
+                }
+
+                [Fact]
+                public void AddSession_ThenTryGet_ReturnsTrue()
+                {
+                    var manager = new AgentSessionManager();
+                    var session = /* create mock AgentSession */;
+                    manager.AddSession("conv-1", session);
+                    var result = manager.TryGetSession("conv-1", out var retrieved);
+                    result.Should().BeTrue();
+                    retrieved.Should().BeSameAs(session);
+                }
+            }
+        }
+
+    test_categories:
+      unit_tests:
+        - Controller validation (empty/null inputs → 400)
+        - Controller success path (valid input → 200 with deserialized response)
+        - Controller error path (malformed JSON from AI → graceful error response)
+        - Controller error path (exception during processing → 500)
+        - SessionManager add/retrieve/overwrite operations
+        - SessionManager concurrent access safety
+
+      integration_tests:
+        - Full HTTP POST to /project/chat with mocked AI backend
+        - Content-Type validation (non-JSON → 415)
+        - Missing request body → 400
+        - Endpoint routing verification
+        - DI container resolution verification
+
+      end_to_end_tests:
+        - Multi-turn conversation flow (session continuity)
+        - Complete requirement gathering → isMatched: true scenario
+        - Partial requirements → isMatched: false with missingRequirements
+        - Session isolation between different conversation_ids
+
+    rules:
+      - Each test class must focus on a single class under test
+      - Use descriptive test method names: {Method}_{Scenario}_{Expected}
+      - Never call real AI endpoints in tests; always mock IChatClient
+      - Test both happy path and error paths for every controller action
+      - Integration tests must replace real AI services with fakes in DI
+      - Keep test data factory methods in a shared TestHelpers class
+      - Run tests with: dotnet test Backend/Agents.Tests/
+
+  # ---------------------------------------------------------------------------
+  # 4. CODE REVIEW AGENT
+  # ---------------------------------------------------------------------------
+  - name: code-reviewer
+    role: Senior Code Reviewer & Static Analysis Specialist
+    description: >
+      Performs static analysis, logic verification, and architectural review to
+      maintain code quality, security, and adherence to project standards.
+
+    responsibilities:
+      - Verify adherence to project coding standards (namespace style, constructor DI, nullability)
+      - Check for security issues (API key exposure, input sanitization, injection risks)
+      - Validate error handling completeness (all code paths return proper HTTP status)
+      - Review AI agent instruction prompts for clarity and completeness
+      - Verify DTO contracts match AI agent expected JSON schemas
+      - Check for proper async/await usage (no sync-over-async, no fire-and-forget)
+      - Validate DI registration (all injected services registered in Program.cs)
+      - Review session management for thread-safety and memory leak potential
+      - Enforce separation of concerns (controllers thin, services contain logic)
+      - Check for hardcoded values that should be in configuration (API keys, URLs, model names)
+
+    technical_scope:
+      all_files:
+        - Backend/Agents/**/*.cs
+        - Backend/Agents/appsettings*.json
+        - Backend/Agents/Agents.csproj
+      focus_areas:
+        - Security: API key management, input validation
+        - Performance: Async patterns, session lifecycle, memory management
+        - Architecture: Layering, DI, separation of concerns
+        - Correctness: JSON schema alignment, error handling coverage
+        - Maintainability: Naming, code duplication, complexity
+
+    checklists:
+      security:
+        - "[ ] No API keys or secrets hardcoded in source files"
+        - "[ ] API keys loaded from appsettings.json or environment variables"
+        - "[ ] Input validation on all user-facing request properties"
+        - "[ ] No raw user input passed directly to AI instructions"
+        - "[ ] CORS configured appropriately if frontend consumes API"
+        - "[ ] HTTPS enforced in production"
+
+      error_handling:
+        - "[ ] All controller actions wrapped in try/catch"
+        - "[ ] JsonException caught separately from general Exception"
+        - "[ ] Meaningful error messages returned (no stack traces in production)"
+        - "[ ] HTTP status codes match error semantics (400 vs 500)"
+        - "[ ] AI response validation before deserialization"
+        - "[ ] Null checks on deserialized response objects"
+
+      architecture:
+        - "[ ] Controllers only handle HTTP concerns (validation, routing, response)"
+        - "[ ] Business logic delegated to service classes"
+        - "[ ] DTOs do not contain logic"
+        - "[ ] Services registered with appropriate lifetime (Singleton/Scoped/Transient)"
+        - "[ ] Each class has a single responsibility"
+        - "[ ] Namespaces align with directory structure"
+
+      async_patterns:
+        - "[ ] All I/O operations are async (await on AI calls, HTTP calls)"
+        - "[ ] No Task.Result or Task.Wait (sync-over-async)"
+        - "[ ] Async methods suffixed with Async where applicable"
+        - "[ ] CancellationToken propagated to async operations"
+
+      configuration:
+        - "[ ] Model names in appsettings.json, not hardcoded"
+        - "[ ] API endpoints configurable per environment"
+        - "[ ] Logging configured at appropriate levels"
+        - "[ ] Development vs Production settings differentiated"
+
+    known_issues_to_flag:
+      - "Program.cs:10 — API key is hardcoded; must move to appsettings or user-secrets"
+      - "Program.cs:17 — Model name hardcoded; should read from configuration"
+      - "Program.cs:13 — Endpoint URL hardcoded; should be configurable"
+      - "Controllers/ProjectChatRequirements.cs:165-168 — String.Replace for markdown stripping is fragile; consider regex"
+      - "Services/SessionManager.cs — No session expiration/cleanup mechanism; potential memory leak"
+      - "Models/ directory is empty — remove or populate to avoid confusion"
+      - "Agents.http:3 — References /weatherforecast/ which does not exist; update to /project/chat"
+
+    rules:
+      - Flag all hardcoded secrets as CRITICAL severity
+      - Flag missing input validation as HIGH severity
+      - Flag missing error handling as HIGH severity
+      - Flag architectural violations as MEDIUM severity
+      - Flag naming convention deviations as LOW severity
+      - Provide specific file:line references for every finding
+      - Include a suggested fix for every issue raised
+      - Categorize findings as CRITICAL / HIGH / MEDIUM / LOW
+      - Never approve code with CRITICAL findings unresolved
+
+# =============================================================================
+# WORKFLOW ORCHESTRATION
+# =============================================================================
+
+workflows:
+  new_feature:
+    description: End-to-end workflow for adding a new backend feature
+    steps:
+      - agent: api-implementer
+        action: Design route, create request/response DTOs
+      - agent: controller-developer
+        action: Scaffold controller with AI agent integration
+      - agent: test-engineer
+        action: Write unit and integration tests
+      - agent: code-reviewer
+        action: Review all new/modified files
+    gate: code-reviewer must produce zero CRITICAL/HIGH findings before merge
+
+  bug_fix:
+    description: Workflow for fixing a backend bug
+    steps:
+      - agent: test-engineer
+        action: Write a failing test that reproduces the bug
+      - agent: controller-developer
+        action: Implement the fix
+      - agent: test-engineer
+        action: Verify the fix passes and add regression tests
+      - agent: code-reviewer
+        action: Review the fix for correctness and side effects
+
+  code_audit:
+    description: Full codebase review
+    steps:
+      - agent: code-reviewer
+        action: Run all checklists against entire Backend/Agents/ directory
+      - agent: test-engineer
+        action: Verify test coverage meets threshold (>80%)

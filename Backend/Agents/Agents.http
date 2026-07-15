@@ -1,0 +1,65 @@
+@Agents_HostAddress = http://localhost:5118
+@conversationId = 11111111-1111-1111-1111-111111111111
+@projectId = 22222222-2222-2222-2222-222222222222
+
+### 1. Requirements chat — send a turn. Repeat with more detail until isMatched=true.
+POST {{Agents_HostAddress}}/project/chat
+Content-Type: application/json
+
+{
+  "conversation_id": "{{conversationId}}",
+  "project_id": "{{projectId}}",
+  "message": "I want to build a web-based e-commerce store with a product catalog, cart, and Stripe checkout for about 10,000 customers. Tech stack is React and ASP.NET. Roles are customer and admin. Needs OAuth2 security, p95 < 300ms, 99.9% availability."
+}
+
+### 2. Modules estimation — paste a completed ProjectChatResponse (from step 1's matched reply).
+POST {{Agents_HostAddress}}/project/modules
+Content-Type: application/json
+
+{
+  "conversation_id": "{{conversationId}}",
+  "project_id": "{{projectId}}",
+  "isMatched": true,
+  "response": "ok",
+  "projectDetails": {
+    "projectObjective": "Build an online store",
+    "scope": ["catalog", "cart", "checkout"],
+    "platform": "Web",
+    "technologyStack": ["React", "ASP.NET"],
+    "integrations": ["Stripe"],
+    "userRoles": ["customer", "admin"],
+    "expectedUsers": "10000",
+    "securityRequirements": ["OAuth2"],
+    "performanceRequirements": "p95 < 300ms",
+    "availabilityRequirements": "99.9%"
+  },
+  "missingRequirements": []
+}
+
+### 3. Orchestrate — routes to the requirements tool (gathering intent).
+POST {{Agents_HostAddress}}/project/orchestrate
+Content-Type: application/json
+
+{
+  "conversation_id": "{{conversationId}}",
+  "project_id": "{{projectId}}",
+  "message": "Here is my project: a web store with catalog and Stripe checkout."
+}
+
+### 4. Orchestrate — routes to the modules tool (once requirements are complete).
+POST {{Agents_HostAddress}}/project/orchestrate
+Content-Type: application/json
+
+{
+  "conversation_id": "{{conversationId}}",
+  "project_id": "{{projectId}}",
+  "message": "Looks good, please estimate the modules now."
+}
+
+### 5. Chat history — ordered messages for the frontend.
+GET {{Agents_HostAddress}}/project/{{conversationId}}/history
+Accept: application/json
+
+### 6. Full snapshot — requirements + modules + messages for a conversation.
+GET {{Agents_HostAddress}}/project/{{conversationId}}
+Accept: application/json
