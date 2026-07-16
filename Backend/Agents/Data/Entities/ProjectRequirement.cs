@@ -9,6 +9,7 @@ namespace Agents.Data.Entities
     {
         public int Id { get; set; }
 
+        public string ProjectId { get; set; } = string.Empty;
         public string ConversationId { get; set; } = string.Empty;
 
         public bool IsMatched { get; set; }

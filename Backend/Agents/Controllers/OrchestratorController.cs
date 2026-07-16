@@ -15,13 +15,22 @@ namespace Orchestration
     {
         private readonly IOrchestratorService _orchestrator;
         private readonly IChatHistoryService _history;
+        private readonly IRequirementsService _requirementsService;
+        private readonly IModulesService _modulesService;
+        private readonly IRiskService _riskService;
 
         public OrchestratorController(
             IOrchestratorService orchestrator,
-            IChatHistoryService history)
+            IChatHistoryService history,
+            IRequirementsService requirementsService,
+            IModulesService modulesService,
+            IRiskService riskService)
         {
             _orchestrator = orchestrator;
             _history = history;
+            _requirementsService = requirementsService;
+            _modulesService = modulesService;
+            _riskService = riskService;
         }
 
         [HttpPost("orchestrate")]
@@ -50,13 +59,13 @@ namespace Orchestration
                 // Persist any completed requirements / modules produced by the tools.
                 if (result.Requirements?.IsMatched == true && result.Requirements.ProjectDetails is not null)
                 {
-                    await _history.SaveRequirementsAsync(
-                        request.conversation_id, result.Requirements.ProjectDetails);
+                    await _requirementsService.SaveRequirementsAsync(
+                        request.conversation_id, request.project_id, result.Requirements.ProjectDetails);
                 }
 
                 if (result.Modules is not null)
                 {
-                    await _history.SaveModulesAsync(request.conversation_id, result.Modules.modules);
+                    await _modulesService.SaveModulesAsync(request.conversation_id, request.project_id, result.Modules.modules);
                 }
 
                 // Persist the assistant reply for history replay.

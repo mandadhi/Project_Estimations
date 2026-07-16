@@ -1,5 +1,6 @@
 using Agents.Data;
 using Agents.Data.Entities;
+using Agents.Dto;
 using Microsoft.EntityFrameworkCore;
 using ModuleEstimation;
 using ProjectChat;
@@ -15,11 +16,6 @@ namespace Agents.Services
         Task<ChatMessage> AddMessageAsync(
             string conversationId, string role, string content, string kind = "text", CancellationToken ct = default);
 
-        /// <summary>Upserts the completed requirements snapshot for a conversation.</summary>
-        Task SaveRequirementsAsync(string conversationId, ProjectDetails details, CancellationToken ct = default);
-
-        /// <summary>Replaces the persisted module set for a conversation.</summary>
-        Task SaveModulesAsync(string conversationId, IEnumerable<ModuleDto> modules, CancellationToken ct = default);
 
         /// <summary>Ordered chat history for the frontend.</summary>
         Task<List<ChatMessage>> GetHistoryAsync(string conversationId, CancellationToken ct = default);
@@ -27,11 +23,6 @@ namespace Agents.Services
         /// <summary>Full persisted snapshot (requirements + modules) for a conversation.</summary>
         Task<Conversation?> GetConversationAsync(string conversationId, CancellationToken ct = default);
 
-        /// <summary>
-        /// Reconstructs the completed <see cref="ProjectDetails"/> for a conversation
-        /// from the persisted requirements snapshot, or null if none is stored.
-        /// </summary>
-        Task<ProjectDetails?> GetRequirementsAsync(string conversationId, CancellationToken ct = default);
     }
 
     public class ChatHistoryService : IChatHistoryService
@@ -89,60 +80,8 @@ namespace Agents.Services
             return message;
         }
 
-        public async Task SaveRequirementsAsync(string conversationId, ProjectDetails details, CancellationToken ct = default)
-        {
-            var existing = await _db.ProjectRequirements
-                .FirstOrDefaultAsync(r => r.ConversationId == conversationId, ct);
 
-            if (existing is null)
-            {
-                existing = new ProjectRequirement { ConversationId = conversationId };
-                _db.ProjectRequirements.Add(existing);
-            }
-
-            existing.IsMatched = true;
-            existing.ProjectObjective = details.ProjectObjective;
-            existing.Scope = details.Scope;
-            existing.Platform = details.Platform;
-            existing.TechnologyStack = details.TechnologyStack;
-            existing.Integrations = details.Integrations;
-            existing.UserRoles = details.UserRoles;
-            existing.ExpectedUsers = details.ExpectedUsers;
-            existing.SecurityRequirements = details.SecurityRequirements;
-            existing.PerformanceRequirements = details.PerformanceRequirements;
-            existing.AvailabilityRequirements = details.AvailabilityRequirements;
-            existing.UpdatedAt = DateTime.UtcNow;
-
-            await _db.SaveChangesAsync(ct);
-        }
-
-        public async Task SaveModulesAsync(string conversationId, IEnumerable<ModuleDto> modules, CancellationToken ct = default)
-        {
-            // Replace the previous set so re-running estimation is idempotent.
-            var old = await _db.ProjectModules
-                .Where(m => m.ConversationId == conversationId)
-                .ToListAsync(ct);
-
-            if (old.Count > 0)
-            {
-                _db.ProjectModules.RemoveRange(old);
-            }
-
-            foreach (var m in modules)
-            {
-                _db.ProjectModules.Add(new ProjectModule
-                {
-                    ConversationId = conversationId,
-                    ModuleName = m.module_name,
-                    Description = m.description,
-                    IsRequired = m.is_required,
-                    Dependencies = m.dependencies ?? new List<string>(),
-                    CreatedAt = DateTime.UtcNow
-                });
-            }
-
-            await _db.SaveChangesAsync(ct);
-        }
+        
 
         public async Task<List<ChatMessage>> GetHistoryAsync(string conversationId, CancellationToken ct = default)
         {
@@ -163,30 +102,5 @@ namespace Agents.Services
                 .FirstOrDefaultAsync(c => c.Id == conversationId, ct);
         }
 
-        public async Task<ProjectDetails?> GetRequirementsAsync(string conversationId, CancellationToken ct = default)
-        {
-            var r = await _db.ProjectRequirements
-                .AsNoTracking()
-                .FirstOrDefaultAsync(x => x.ConversationId == conversationId && x.IsMatched, ct);
-
-            if (r is null)
-            {
-                return null;
-            }
-
-            return new ProjectDetails
-            {
-                ProjectObjective = r.ProjectObjective,
-                Scope = r.Scope,
-                Platform = r.Platform,
-                TechnologyStack = r.TechnologyStack,
-                Integrations = r.Integrations,
-                UserRoles = r.UserRoles,
-                ExpectedUsers = r.ExpectedUsers,
-                SecurityRequirements = r.SecurityRequirements,
-                PerformanceRequirements = r.PerformanceRequirements,
-                AvailabilityRequirements = r.AvailabilityRequirements
-            };
-        }
     }
 }

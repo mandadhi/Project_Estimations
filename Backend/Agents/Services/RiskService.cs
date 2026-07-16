@@ -1,62 +1,66 @@
 using System.Text.Json;
-using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
 using Agents.Agents;
-using ModuleEstimation;
+using Agents.Data;
+using Agents.Data.Entities;
+using Agents.Dto;
+using Microsoft.Agents.AI;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using ProjectChat;
 using SessionManager;
-using Agents.Data;
-using Microsoft.EntityFrameworkCore;
-using Agents.Data.Entities;
 
 namespace Agents.Services
 {
-    public interface IModulesService
+
+    public interface IRiskService
     {
-        /// <summary>
-        /// Runs the modules-estimation agent over a completed requirements payload
-        /// and returns the parsed <see cref="ModuleEstimationDto"/> (or invalid-JSON).
-        /// </summary>
-        Task<AgentResult<ModuleEstimationDto>> EstimateAsync(
+
+        Task<AgentResult<RiskEstimationDtoResponse>> EstimateAsync(
             ProjectChatResponse chatResponse,
             CancellationToken cancellationToken = default);
-
-        Task SaveModulesAsync(string conversationId, string projectId, IEnumerable<ModuleDto> modules, CancellationToken ct = default);
-
         /// <summary>
-        /// Convenience overload for the orchestrator: estimate modules directly from a
-        /// <see cref="ProjectDetails"/> plus the conversation/project identifiers.
+        /// Runs the requirements-analysis agent for a conversation turn and returns
+        /// the parsed <see cref="RiskEstimationDtoResponse"/> (or an invalid-JSON result).
         /// </summary>
-        Task<AgentResult<ModuleEstimationDto>> EstimateAsync(
+        // Task<AgentResult<RiskEstimationDtoResponse>> EstimateAsync(
+        //     string conversationId,
+        //     string projectId,
+        //     string message,
+        //     CancellationToken cancellationToken = default);
+
+        Task<AgentResult<RiskEstimationDtoResponse>> EstimateAsync(
             string conversationId,
             string projectId,
             ProjectDetails details,
             CancellationToken cancellationToken = default);
+        Task SaveRisksAsync(string conversationId, string projectId, IEnumerable<RiskDto> risks, CancellationToken ct = default);
     }
 
-    public class ModulesService : IModulesService
+
+    public class RiskService : IRiskService
     {
+
         private readonly IChatClient _chatClient;
         private readonly AgentSessionManager _sessionManager;
 
         private readonly AppDbContext _db;
 
-        public ModulesService(IChatClient chatClient, AgentSessionManager sessionManager, AppDbContext db)
+        public RiskService(IChatClient chatClient, AgentSessionManager sessionManager, AppDbContext db)
         {
             _chatClient = chatClient;
             _sessionManager = sessionManager;
             _db = db;
         }
 
-        public async Task<AgentResult<ModuleEstimationDto>> EstimateAsync(
+        public async Task<AgentResult<RiskEstimationDtoResponse>> EstimateAsync(
             ProjectChatResponse chatResponse,
             CancellationToken cancellationToken = default)
         {
             ProjectDetails? details = chatResponse.ProjectDetails;
 
             AIAgent agent = _chatClient.AsAIAgent(
-                name: AgentDefinitions.ModulesAgentName,
-                instructions: AgentDefinitions.ModulesInstructions);
+                name: AgentDefinitions.RiskAgentName,
+                instructions: AgentDefinitions.RiskInstructions);
 
             if (!_sessionManager.TryGetSession(chatResponse.conversation_id, out AgentSession? session))
             {
@@ -64,28 +68,33 @@ namespace Agents.Services
                 _sessionManager.AddSession(chatResponse.conversation_id, session);
             }
 
+
             string input = JsonSerializer.Serialize(details);
+
 
             AgentResponse response = await agent.RunAsync(input, session: session);
 
-            var parsed = AgentJson.TryDeserialize<ModuleEstimationDto>(response.Text);
+            var parsed = AgentJson.TryDeserialize<RiskEstimationDtoResponse>(response.Text);
+
             if (parsed is null)
             {
-                return AgentResult<ModuleEstimationDto>.Invalid(
+                return AgentResult<RiskEstimationDtoResponse>.Invalid(
                     "Agent returned invalid JSON",
-                    "Response could not be parsed as ModuleEstimationDto",
+                    "Response could not be parsed as RiskEstimationDtoResponse",
                     response.Text);
             }
 
             // Ensure identifiers are always present for persistence, even if the
             // model omitted or altered them.
-            parsed.conversation_id = chatResponse.conversation_id;
-            parsed.project_id = chatResponse.project_id;
+            parsed.ConversationId = chatResponse.conversation_id;
+            parsed.ProjectId = chatResponse.project_id;
 
-            return AgentResult<ModuleEstimationDto>.Ok(parsed, response.Text);
+            return AgentResult<RiskEstimationDtoResponse>.Ok(parsed, response.Text);
         }
 
-        public Task<AgentResult<ModuleEstimationDto>> EstimateAsync(
+
+
+        public async Task<AgentResult<RiskEstimationDtoResponse>> EstimateAsync(
             string conversationId,
             string projectId,
             ProjectDetails details,
@@ -95,36 +104,36 @@ namespace Agents.Services
             {
                 conversation_id = conversationId,
                 project_id = projectId,
-                IsMatched = true,
                 ProjectDetails = details
             };
 
-            return EstimateAsync(chatResponse, cancellationToken);
+            return await EstimateAsync(chatResponse, cancellationToken);
         }
 
-        public async Task SaveModulesAsync(string conversationId, string projectId, IEnumerable<ModuleDto> modules, CancellationToken ct = default)
+        public async Task SaveRisksAsync(string conversationId, string projectId, IEnumerable<RiskDto> risks, CancellationToken ct = default)
         {
             // Replace the previous set so re-running estimation is idempotent.
-            var old = await _db.ProjectModules
-                .Where(m => m.ConversationId == conversationId && m.ProjectId == projectId)
+            var old = await _db.ProjectRisks
+                .Where(r => r.ConversationId == conversationId && r.ProjectId == projectId)
                 .ToListAsync(ct);
 
             if (old.Count > 0)
             {
-                _db.ProjectModules.RemoveRange(old);
+                _db.ProjectRisks.RemoveRange(old);
             }
 
-            foreach (var m in modules)
+            foreach (var r in risks)
             {
-                _db.ProjectModules.Add(new ProjectModule
+                _db.ProjectRisks.Add(new Risk
                 {
                     ConversationId = conversationId,
+                    Name = r.RiskName,
+                    Description = r.RiskDescription,
+                    Severity = r.Severity,
+                    MitigationPlan = r.MitigationStrategy,
                     ProjectId = projectId,
-                    ModuleName = m.module_name,
-                    Description = m.description,
-                    IsRequired = m.is_required,
-                    Dependencies = m.dependencies ?? new List<string>(),
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
                 });
             }
 
