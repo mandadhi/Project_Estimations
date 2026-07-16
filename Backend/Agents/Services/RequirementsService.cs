@@ -3,6 +3,9 @@ using Microsoft.Extensions.AI;
 using Agents.Agents;
 using ProjectChat;
 using SessionManager;
+using Agents.Data;
+using Agents.Data.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace Agents.Services
 {
@@ -17,6 +20,9 @@ namespace Agents.Services
             string projectId,
             string message,
             CancellationToken cancellationToken = default);
+
+        Task SaveRequirementsAsync(string conversationId, string projectId, ProjectDetails details, CancellationToken ct = default);
+        Task<ProjectDetails?> GetRequirementsAsync(string conversationId, string projectId, CancellationToken ct = default);
     }
 
     public class RequirementsService : IRequirementsService
@@ -24,10 +30,13 @@ namespace Agents.Services
         private readonly IChatClient _chatClient;
         private readonly AgentSessionManager _sessionManager;
 
-        public RequirementsService(IChatClient chatClient, AgentSessionManager sessionManager)
+        private readonly AppDbContext _db;
+
+        public RequirementsService(IChatClient chatClient, AgentSessionManager sessionManager, AppDbContext db)
         {
             _chatClient = chatClient;
             _sessionManager = sessionManager;
+            _db = db;
         }
 
         public async Task<AgentResult<ProjectChatResponse>> AnalyzeAsync(
@@ -63,5 +72,59 @@ namespace Agents.Services
 
             return AgentResult<ProjectChatResponse>.Ok(parsed, response.Text);
         }
+
+        public async Task SaveRequirementsAsync(string conversationId, string projectId, ProjectDetails details, CancellationToken ct = default)
+        {
+            var existing = await _db.ProjectRequirements
+                .FirstOrDefaultAsync(r => r.ConversationId == conversationId && r.ProjectId == projectId, ct);
+
+            if (existing is null)
+            {
+                existing = new ProjectRequirement { ConversationId = conversationId, ProjectId = projectId };
+                _db.ProjectRequirements.Add(existing);
+            }
+
+            existing.IsMatched = true;
+            existing.ProjectObjective = details.ProjectObjective;
+            existing.Scope = details.Scope;
+            existing.Platform = details.Platform;
+            existing.TechnologyStack = details.TechnologyStack;
+            existing.Integrations = details.Integrations;
+            existing.UserRoles = details.UserRoles;
+            existing.ExpectedUsers = details.ExpectedUsers;
+            existing.SecurityRequirements = details.SecurityRequirements;
+            existing.PerformanceRequirements = details.PerformanceRequirements;
+            existing.AvailabilityRequirements = details.AvailabilityRequirements;
+            existing.UpdatedAt = DateTime.UtcNow;
+
+            await _db.SaveChangesAsync(ct);
+        }
+
+        public async Task<ProjectDetails?> GetRequirementsAsync(string conversationId, string projectId, CancellationToken ct = default)
+        {
+            var r = await _db.ProjectRequirements
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.ConversationId == conversationId && x.ProjectId == projectId && x.IsMatched, ct);
+
+            if (r is null)
+            {
+                return null;
+            }
+
+            return new ProjectDetails
+            {
+                ProjectObjective = r.ProjectObjective,
+                Scope = r.Scope,
+                Platform = r.Platform,
+                TechnologyStack = r.TechnologyStack,
+                Integrations = r.Integrations,
+                UserRoles = r.UserRoles,
+                ExpectedUsers = r.ExpectedUsers,
+                SecurityRequirements = r.SecurityRequirements,
+                PerformanceRequirements = r.PerformanceRequirements,
+                AvailabilityRequirements = r.AvailabilityRequirements
+            };
+        }
+
     }
 }

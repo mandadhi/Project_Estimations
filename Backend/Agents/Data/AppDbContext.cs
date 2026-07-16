@@ -22,6 +22,8 @@ namespace Agents.Data
         public DbSet<ProjectRequirement> ProjectRequirements => Set<ProjectRequirement>();
         public DbSet<ProjectModule> ProjectModules => Set<ProjectModule>();
 
+        public DbSet<Risk> ProjectRisks => Set<Risk>();
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -86,6 +88,12 @@ namespace Agents.Data
                 e.HasKey(m => m.Id);
                 e.HasIndex(m => m.ConversationId);
                 e.Property(m => m.Dependencies).HasConversion(listConverter, listComparer);
+            });
+
+            modelBuilder.Entity<Risk>(e =>
+            {
+                e.HasKey(r => r.Id);
+                e.HasIndex(r => r.ConversationId);
             });
         }
     }

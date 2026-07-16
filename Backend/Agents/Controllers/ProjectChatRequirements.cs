@@ -15,7 +15,6 @@ namespace ProjectRequirements
     {
         private readonly IRequirementsService _requirementsService;
         private readonly IChatHistoryService _history;
-
         public ProjectChat(
             IRequirementsService requirementsService,
             IChatHistoryService history)
@@ -68,8 +67,8 @@ namespace ProjectRequirements
 
                 if (response.IsMatched && response.ProjectDetails is not null)
                 {
-                    await _history.SaveRequirementsAsync(
-                        request.conversation_id, response.ProjectDetails);
+                    await _requirementsService.SaveRequirementsAsync(
+                        request.conversation_id, request.project_id, response.ProjectDetails);
                 }
 
                 return Ok(response);

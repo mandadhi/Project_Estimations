@@ -10,6 +10,8 @@ namespace Agents.Data.Entities
 
         public string ConversationId { get; set; } = string.Empty;
 
+        public string ProjectId { get; set; } = string.Empty;
+
         public string ModuleName { get; set; } = string.Empty;
 
         public string Description { get; set; } = string.Empty;

@@ -38,6 +38,9 @@ namespace Agents.Services
 
         /// <summary>Set when the modules tool ran and parsed successfully.</summary>
         public ModuleEstimationDto? Modules { get; init; }
+
+        /// <summary>Set when the risks tool ran and parsed successfully.</summary>
+        public RiskEstimationDtoResponse? Risks { get; init; }
     }
 
     public class OrchestratorService : IOrchestratorService
@@ -48,22 +51,28 @@ namespace Agents.Services
         private readonly IChatHistoryService _history;
         private readonly AgentSessionManager _sessionManager;
 
+        private readonly IRiskService _riskService;
+
         // Tool identifiers, also used as the deterministic router's decision values.
         private const string RequirementsTool = "analyze_requirements";
         private const string ModulesTool = "estimate_modules";
+
+        private const string RisksTool = "analyze_risks";
 
         public OrchestratorService(
             IChatClient chatClient,
             IRequirementsService requirementsService,
             IModulesService modulesService,
             IChatHistoryService history,
-            AgentSessionManager sessionManager)
+            AgentSessionManager sessionManager,
+            IRiskService riskService)
         {
             _chatClient = chatClient;
             _requirementsService = requirementsService;
             _modulesService = modulesService;
             _history = history;
             _sessionManager = sessionManager;
+            _riskService = riskService;
         }
 
         public async Task<OrchestratorResult> RunAsync(
@@ -76,6 +85,7 @@ namespace Agents.Services
             // so we know what ran regardless of how the model/framework behaves.
             ProjectChatResponse? requirementsResult = null;
             ModuleEstimationDto? modulesResult = null;
+            RiskEstimationDtoResponse? risksResult = null;
             string? invokedTool = null;
 
             async Task<string> RunRequirementsTool(string userMessage)
@@ -95,7 +105,7 @@ namespace Agents.Services
             {
                 invokedTool = ModulesTool;
                 // Modules estimation needs completed requirements — load the latest snapshot.
-                var details = await _history.GetRequirementsAsync(conversationId, cancellationToken);
+                var details = await _requirementsService.GetRequirementsAsync(conversationId, projectId, cancellationToken);
                 if (details is null)
                 {
                     return "{\"error\":\"No completed requirements found for this conversation.\"}";
@@ -105,6 +115,25 @@ namespace Agents.Services
                 if (result.Success && result.Value is not null)
                 {
                     modulesResult = result.Value;
+                    return JsonSerializer.Serialize(result.Value);
+                }
+                return result.RawText ?? "{}";
+            }
+
+
+            async Task<string> RunRisksTool()
+            {
+                invokedTool = RisksTool;
+                var details = await _requirementsService.GetRequirementsAsync(conversationId, projectId, cancellationToken);
+                if (details is null)
+                {
+                    return "{\"error\":\"No completed requirements found for this conversation.\"}";
+                }
+                var result = await _riskService.EstimateAsync(
+                    conversationId, projectId, details, cancellationToken);
+                if (result.Success && result.Value is not null)
+                {
+                    risksResult = result.Value;
                     return JsonSerializer.Serialize(result.Value);
                 }
                 return result.RawText ?? "{}";
@@ -125,6 +154,12 @@ namespace Agents.Services
                     description: "Break the completed project requirements into the list of software modules. " +
                                  "Use only when requirements are complete and the user wants modules, " +
                                  "estimation, or to proceed."),
+                AIFunctionFactory.Create(
+                    (Func<Task<string>>)(() => RunRisksTool()),
+                    name: RisksTool,
+                    description: "Analyze the completed project requirements and determine potential risks. " +
+                                 "Use only when requirements are complete and the user wants to understand " +
+                                 "potential risks for the project."),
             };
 
             // 1) Attempt LLM-driven tool selection.
@@ -154,7 +189,7 @@ namespace Agents.Services
             // 2) Deterministic fallback: if no tool was invoked by the model, route ourselves.
             if (invokedTool is null)
             {
-                var routed = await RouteDeterministicallyAsync(conversationId, message, cancellationToken);
+                var routed = await RouteDeterministicallyAsync(conversationId, projectId, message, cancellationToken);
                 if (routed == RequirementsTool)
                 {
                     await RunRequirementsTool(message);
@@ -163,10 +198,14 @@ namespace Agents.Services
                 {
                     await RunModulesTool();
                 }
+                else if (routed == RisksTool)
+                {
+                    await RunRisksTool();
+                }
                 // routed == null → no tool applies; keep the assistant's own message.
             }
 
-            return BuildResult(invokedTool, requirementsResult, modulesResult, assistantText);
+            return BuildResult(invokedTool, requirementsResult, modulesResult, risksResult, assistantText);
         }
 
         /// <summary>
@@ -175,7 +214,7 @@ namespace Agents.Services
         /// to proceed/estimate; otherwise defaults to requirements analysis.
         /// </summary>
         private async Task<string?> RouteDeterministicallyAsync(
-            string conversationId, string message, CancellationToken ct)
+            string conversationId, string projectId, string message, CancellationToken ct)
         {
             var text = message.ToLowerInvariant();
 
@@ -184,13 +223,25 @@ namespace Agents.Services
                 "module", "estimate", "estimation", "proceed", "continue",
                 "break down", "decompose", "next step", "go ahead"
             };
+
+            string[] riskSignals =
+            {
+                "risk", "risks", "danger", "threat", "problem", "issue", "concern"
+            };
+
             bool wantsModules = moduleSignals.Any(text.Contains);
 
-            bool requirementsReady = await _history.GetRequirementsAsync(conversationId, ct) is not null;
+            bool wantsRisks = riskSignals.Any(text.Contains);
+
+            bool requirementsReady = await _requirementsService.GetRequirementsAsync(conversationId, projectId, ct) is not null;
 
             if (wantsModules && requirementsReady)
             {
                 return ModulesTool;
+            }
+            if (wantsRisks && requirementsReady)
+            {
+                return RisksTool;
             }
 
             // Default: treat the turn as requirements gathering. This is the safe
@@ -202,6 +253,7 @@ namespace Agents.Services
             string? invokedTool,
             ProjectChatResponse? requirements,
             ModuleEstimationDto? modules,
+            RiskEstimationDtoResponse? risks,
             string assistantText)
         {
             if (invokedTool == RequirementsTool && requirements is not null)
@@ -236,6 +288,24 @@ namespace Agents.Services
                     }
                 };
             }
+
+
+            if (invokedTool == RisksTool && risks is not null)
+            {
+                int count = risks.Risks?.Count ?? 0;
+                return new OrchestratorResult
+                {
+                    Risks = risks,
+                    Response = new OrchestratorResponse
+                    {
+                        tool_invoked = RisksTool,
+                        message = $"Identified {count} potential risk{(count == 1 ? "" : "s")} for your project.",
+                        kind = "risks",
+                        data = risks,
+                    }
+                };
+            }
+
 
             // No tool applied (or tool failed to parse) — return the assistant's message.
             return new OrchestratorResult

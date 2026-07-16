@@ -1,30 +1,25 @@
 using Microsoft.AspNetCore.Mvc;
 using Agents.Services;
 using ProjectChat;
-
 namespace Agents.Controllers
 {
-    /// <summary>
-    /// Modules-estimation endpoint. Thin controller: delegates agent work to
-    /// <see cref="IModulesService"/> and persistence to <see cref="IChatHistoryService"/>.
-    /// </summary>
     [ApiController]
     [Route("project")]
-    public class ModuleEstimationAgent : ControllerBase
+    public class RisksController : ControllerBase
     {
-        private readonly IModulesService _modulesService;
+        private readonly IRiskService _riskService;
         private readonly IChatHistoryService _history;
 
-        public ModuleEstimationAgent(
-            IModulesService modulesService,
+        public RisksController(
+            IRiskService riskService,
             IChatHistoryService history)
         {
-            _modulesService = modulesService;
+            _riskService = riskService;
             _history = history;
         }
 
-        [HttpPost("modules")]
-        public async Task<IActionResult> ModuleEstimationRoute(
+        [HttpPost("risks")]
+        public async Task<IActionResult> EstimateRisks(
             [FromBody] ProjectChatResponse chatResponse)
         {
             if (string.IsNullOrWhiteSpace(chatResponse.conversation_id))
@@ -32,7 +27,7 @@ namespace Agents.Controllers
                 return BadRequest(new { error = "conversation_id is required" });
             }
 
-            if (chatResponse.ProjectDetails is null)
+           if(chatResponse.ProjectDetails is null)
             {
                 return BadRequest(new { error = "projectDetails is required" });
             }
@@ -42,7 +37,7 @@ namespace Agents.Controllers
                 await _history.EnsureConversationAsync(
                     chatResponse.conversation_id, chatResponse.project_id);
 
-                var result = await _modulesService.EstimateAsync(chatResponse);
+                var result = await _riskService.EstimateAsync(chatResponse);
 
                 if (!result.Success || result.Value is null)
                 {
@@ -54,22 +49,22 @@ namespace Agents.Controllers
                     });
                 }
 
-                var modules = result.Value;
+                var risks = result.Value;
 
-                await _modulesService.SaveModulesAsync(chatResponse.conversation_id, chatResponse.project_id, modules.modules);
+                await _riskService.SaveRisksAsync(chatResponse.conversation_id, chatResponse.project_id, risks.Risks);
                 await _history.AddMessageAsync(
                     chatResponse.conversation_id,
                     "assistant",
-                    $"Identified {modules.modules.Count} module{(modules.modules.Count == 1 ? "" : "s")} for your project.",
-                    "modules");
+                    $"Identified {risks.Risks.Count} risk{(risks.Risks.Count == 1 ? "" : "s")} for your project.",
+                    "risks");
 
-                return Ok(modules);
+                return Ok(risks);
             }
             catch (Exception ex)
             {
                 return StatusCode(500, new
                 {
-                    error = "Unexpected error while processing module estimation",
+                    error = "Unexpected error while processing risk estimation",
                     details = ex.Message
                 });
             }
