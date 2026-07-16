@@ -1,0 +1,194 @@
+erDiagram
+
+    USERS {
+        INTEGER UserId PK
+        TEXT FullName
+        TEXT Email UK
+        TEXT PasswordHash
+        TEXT Phone
+        TEXT Company
+        TEXT Designation
+        TEXT Bio
+        TEXT ProfileImageUrl
+        DATETIME CreatedDate
+        DATETIME UpdatedDate
+    }
+
+    PROJECTS {
+        INTEGER ProjectId PK
+        INTEGER UserId FK
+        TEXT ProjectName
+        TEXT Description
+        TEXT Status
+        DATETIME CreatedDate
+        DATETIME UpdatedDate
+    }
+
+    CONVERSATIONS {
+        INTEGER ConversationId PK
+        INTEGER ProjectId FK
+        TEXT Title
+        DATETIME CreatedAt
+        DATETIME UpdatedAt
+    }
+
+    MESSAGES {
+        INTEGER MessageId PK
+        INTEGER ConversationId FK
+        TEXT Role
+        TEXT Content
+        DATETIME CreatedAt
+    }
+
+    REQUIREMENTS {
+    INTEGER RequirementId PK
+    INTEGER ProjectId FK
+
+    BOOLEAN IsMatched
+
+    TEXT AnalysisResponse
+
+    TEXT ProjectObjective
+
+    TEXT ScopeJson
+    TEXT Platform
+
+    TEXT TechnologyStackJson
+    TEXT IntegrationsJson
+    TEXT UserRolesJson
+
+    TEXT ExpectedUsers
+
+    TEXT SecurityRequirementsJson
+
+    TEXT PerformanceRequirements
+    TEXT AvailabilityRequirements
+
+    TEXT MissingRequirementsJson
+
+    DATETIME CreatedDate
+    DATETIME UpdatedDate
+}
+
+    MODULES {
+        INTEGER ModuleId PK
+        INTEGER ProjectId FK
+        TEXT ModuleName
+        TEXT ModuleDescription
+        TEXT ComplexityLevel
+        DATETIME CreatedDate
+    }
+
+    USER_STORIES {
+        INTEGER StoryId PK
+        INTEGER ProjectId FK
+        INTEGER ModuleId FK
+        TEXT StoryTitle
+        TEXT StoryDescription
+        TEXT Priority
+        INTEGER StoryPoints
+        DATETIME CreatedDate
+    }
+
+    SUBTASKS {
+        INTEGER TaskId PK
+        INTEGER StoryId FK
+        TEXT TaskName
+        TEXT TaskDescription
+        TEXT TaskType
+        TEXT ComplexityLevel
+        REAL EstimatedHours
+        DATETIME CreatedDate
+    }
+
+    ASSUMPTIONS {
+        INTEGER AssumptionId PK
+        INTEGER ProjectId FK
+        TEXT Description
+        TEXT Category
+        DATETIME CreatedDate
+    }
+
+    RISKS {
+        INTEGER RiskId PK
+        INTEGER ProjectId FK
+        TEXT RiskDescription
+        TEXT Severity
+        TEXT MitigationPlan
+        DATETIME CreatedDate
+    }
+
+    ACCEPTANCE_CRITERIA {
+        INTEGER CriteriaId PK
+        INTEGER ProjectId FK
+        INTEGER ModuleId FK
+        TEXT Description
+        DATETIME CreatedDate
+    }
+
+    COMPLEXITY_ASSESSMENTS {
+        INTEGER ComplexityId PK
+        INTEGER ProjectId FK
+        INTEGER ModuleId FK
+        TEXT ComplexityLevel
+        INTEGER ComplexityScore
+        TEXT Reasons
+    }
+
+    MODULE_ESTIMATIONS {
+        INTEGER ModuleEstimationId PK
+        INTEGER ProjectId FK
+        INTEGER ModuleId FK
+        REAL EstimatedHours
+        REAL ConfidenceScore
+        DATETIME CreatedDate
+    }
+
+    PROJECT_ESTIMATIONS {
+        INTEGER ProjectEstimationId PK
+        INTEGER ProjectId FK
+        REAL TotalHours
+        REAL TotalDays
+        REAL TotalWeeks
+        REAL RiskBufferHours
+        REAL FinalEstimatedHours
+        REAL ConfidenceScore
+        DATETIME CreatedDate
+    }
+
+    PROPOSAL_DOCUMENTS {
+        INTEGER ProposalId PK
+        INTEGER ProjectId FK
+        TEXT ProposalContent
+        DATETIME GeneratedDate
+    }
+
+    USERS ||--o{ PROJECTS : owns
+
+    PROJECTS ||--|| CONVERSATIONS : has
+    CONVERSATIONS ||--o{ MESSAGES : contains
+
+    PROJECTS ||-- || REQUIREMENTS : has
+
+    PROJECTS ||--o{ MODULES : contains
+
+    PROJECTS ||--o{ USER_STORIES : contains
+    MODULES ||--o{ USER_STORIES : contains
+
+    USER_STORIES ||--o{ SUBTASKS : contains
+
+    PROJECTS ||--o{ ASSUMPTIONS : contains
+    PROJECTS ||--o{ RISKS : contains
+
+    PROJECTS ||--o{ ACCEPTANCE_CRITERIA : contains
+    MODULES ||--o{ ACCEPTANCE_CRITERIA : defines
+
+    PROJECTS ||--o{ COMPLEXITY_ASSESSMENTS : contains
+    MODULES ||--o{ COMPLEXITY_ASSESSMENTS : assessed
+
+    PROJECTS ||--o{ MODULE_ESTIMATIONS : contains
+    MODULES ||--o{ MODULE_ESTIMATIONS : estimated
+
+    PROJECTS ||--o{ PROJECT_ESTIMATIONS : contains
+
+    PROJECTS ||--o{ PROPOSAL_DOCUMENTS : generates
